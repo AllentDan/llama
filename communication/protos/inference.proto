@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+message InferInput {
+  string prompts = 1;
+}
+
+message InferOutput {
+  string text = 1;
+}
+
+message SessionID {
+  int64 id = 1;
+}
+
+service LLaMAService {
+  rpc generate(InferInput) returns (InferOutput) {}
+  rpc commit(InferInput) returns (SessionID) {}
+  rpc get(SessionID) returns (InferOutput) {}
+}
