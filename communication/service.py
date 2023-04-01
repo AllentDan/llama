@@ -1,5 +1,6 @@
 from concurrent import futures
 
+import asyncio
 import grpc
 import inference_pb2
 import inference_pb2_grpc
@@ -71,22 +72,24 @@ def load(
 
 
 class LLaMAServer(inference_pb2_grpc.LLaMAServiceServicer):
-    def __init__(self, q: queue.Queue) -> None:
+    def __init__(self, local_rank: int = 0, generator: LLaMA = None) -> None:
         super().__init__()
-        self.request_que = q
         self.count = 0
+        self.local_rank = local_rank
+        self.generator = generator
 
-    def generate(self, request, conext):
-        t = threading.currentThread()
-        message = f'this is server with thread id: {t.ident}, \
-            thread name {t.getName()}, count: {self.count}'
-        self.count += 1
-        self.request_que.put('hello, world')
-        # message = self.generator.generate([''],
-        #                                   max_gen_len=256,
-        #                                   temperature=0.8,
-        #                                   top_p=0.95)
-        return inference_pb2.InferOutput(text=message)
+    async def generate(self, request, conext):
+        print(f'[{self.local_rank}], prompt: {request.prompts}')
+
+        # self.count += 1
+        message = self.generator.generate(
+            [''],
+            max_gen_len=256,
+            temperature=0.8,
+            top_p=0.95)
+        print(f'[{self.local_rank}], message: {message}')
+        # await context.send_response(inference_pb2.InferOutput(text=message))
+        return inference_pb2.InferOutput(text=message[0])
 
     def commit(self, request, context):
         print('this is server: commit')
@@ -95,6 +98,18 @@ class LLaMAServer(inference_pb2_grpc.LLaMAServiceServicer):
     def get(self, request, conext):
         print('this is server: get')
         pass
+
+
+async def async_server(local_rank, port, generator):
+    server = grpc.aio.server()
+    inference_pb2_grpc.add_LLaMAServiceServicer_to_server(
+        LLaMAServer(local_rank=local_rank, generator=generator),
+        server)
+    listen_addr = f'[::]:{port}'
+    server.add_insecure_port(listen_addr)
+    print(f'async gRPC starting on {listen_addr}...')
+    await server.start()
+    await server.wait_for_termination()
 
 
 def server(port, generator):
@@ -138,8 +153,10 @@ def main(
     port: int = 50051
 ):
     local_rank, world_size = setup_model_parallel()
-    if local_rank > 0:
-        sys.stdout = open(os.devnull, "w")
+    # if local_rank > 0:
+    #     sys.stdout = open(os.devnull, "w")
+
+    port += local_rank
 
     generator = load(
         ckpt_dir, tokenizer_path, local_rank, world_size, max_seq_len,
@@ -149,10 +166,11 @@ def main(
     # 请求队列
     request_que = queue.Queue()
 
-    # 启动server
-    t1 = threading.Thread(target=start_server, args=(port, request_que))
-    t1.setDaemon(True)
-    t1.start()
+    # # 启动server
+    # t1 = threading.Thread(target=start_server, args=(port, request_que))
+    # t1.setDaemon(True)
+    # t1.start()
+    asyncio.run(async_server(local_rank, port, generator))
 
     # 处理请求队列中的数据
     print('start to process requests: ')
