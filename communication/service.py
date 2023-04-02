@@ -83,7 +83,7 @@ class LLaMAServer(inference_pb2_grpc.LLaMAServiceServicer):
 
         # self.count += 1
         message = self.generator.generate(
-            [''],
+            [request.prompts],
             max_gen_len=256,
             temperature=0.8,
             top_p=0.95)
@@ -123,21 +123,6 @@ def server(port, generator):
     server.wait_for_termination()
 
 
-def start_server(port, q):
-    # q.put('hello, world')
-    # while True:
-    #     q.put('')
-    #     time.sleep(20)
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    inference_pb2_grpc.add_LLaMAServiceServicer_to_server(
-        LLaMAServer(q),
-        server)
-    server.add_insecure_port(f'[::]:{port}')
-    print('gRPC starting...')
-    server.start()
-    server.wait_for_termination()
-
-
 def worker(generator):
     result = generator.generate([''], max_gen_len=256, temperature=0.8, top_p=0.95)
     print(result)
@@ -153,8 +138,8 @@ def main(
     port: int = 50051
 ):
     local_rank, world_size = setup_model_parallel()
-    # if local_rank > 0:
-    #     sys.stdout = open(os.devnull, "w")
+    if local_rank > 0:
+        sys.stdout = open(os.devnull, "w")
 
     port += local_rank
 
@@ -163,36 +148,7 @@ def main(
         max_batch_size
     )
 
-    # 请求队列
-    request_que = queue.Queue()
-
-    # # 启动server
-    # t1 = threading.Thread(target=start_server, args=(port, request_que))
-    # t1.setDaemon(True)
-    # t1.start()
     asyncio.run(async_server(local_rank, port, generator))
-
-    # 处理请求队列中的数据
-    print('start to process requests: ')
-    while True:
-        print(f'queue len: {request_que.qsize()}')
-        if request_que.empty():
-            print('sleep ...')
-            time.sleep(2)
-            continue
-        prompt = request_que.get()
-        print([prompt])
-
-        result = generator.generate([prompt], max_gen_len=256,
-                                    temperature=0.8, top_p=0.95)
-        print(result)
-
-    # # 不能在子线程中使用generator，会报如下的错误：
-    # # RuntimeError: Expected all tensors to be on the same device,
-    # # but found at least two devices, cuda:1 and cuda:0! (when checking
-    # # argument for argument index in method wrapper__index_select)
-    # t1 = threading.Thread(target=worker, args=(generator,))
-    # t1.start()
 
 
 if __name__ == '__main__':

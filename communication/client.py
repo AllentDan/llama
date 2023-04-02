@@ -15,7 +15,6 @@ class Sender:
                        for channel in self.channels]
 
     async def send_request(self, message):
-        print(f'send prompt: {message}')
         # 创建消息对象
         request = inference_pb2.InferInput(prompts=message)
 
@@ -45,18 +44,15 @@ async def send_request(server_address, message):
 
 async def main():
     client = Sender(['localhost:50051', 'localhost:50052'])
-    await client.send_request('')
-    # print('please input prompt:')
-    # while True:
-    #     print('>>')
-    #     prompt = input()
-    #     if prompt != 'exit':
-    #         await client.send_request(prompt)
-    #     else:
-    #         await client.close()
-    
-    
-    # the work version
+    print('please input prompt:')
+    while True:
+        print('>>')
+        prompt = input()
+        if prompt != 'exit':
+            await client.send_request(prompt)
+        else:
+            await client.close()
+
     # task1 = asyncio.create_task(send_request('localhost:50051', 'Hello from client 1'))
     # task2 = asyncio.create_task(send_request('localhost:50052', 'Hello from client 2'))
 
