@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package streaming;
+
 message InferInput {
   string prompts = 1;
 }
@@ -13,7 +15,7 @@ message SessionID {
 }
 
 service LLaMAService {
-  rpc generate(InferInput) returns (InferOutput) {}
+  rpc Generate(InferInput) returns (stream InferOutput) {}
   rpc commit(InferInput) returns (SessionID) {}
   rpc get(SessionID) returns (InferOutput) {}
 }

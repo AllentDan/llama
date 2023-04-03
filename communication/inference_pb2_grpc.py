@@ -14,18 +14,18 @@ class LLaMAServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.generate = channel.unary_unary(
-                '/LLaMAService/generate',
+        self.Generate = channel.unary_stream(
+                '/streaming.LLaMAService/Generate',
                 request_serializer=inference__pb2.InferInput.SerializeToString,
                 response_deserializer=inference__pb2.InferOutput.FromString,
                 )
         self.commit = channel.unary_unary(
-                '/LLaMAService/commit',
+                '/streaming.LLaMAService/commit',
                 request_serializer=inference__pb2.InferInput.SerializeToString,
                 response_deserializer=inference__pb2.SessionID.FromString,
                 )
         self.get = channel.unary_unary(
-                '/LLaMAService/get',
+                '/streaming.LLaMAService/get',
                 request_serializer=inference__pb2.SessionID.SerializeToString,
                 response_deserializer=inference__pb2.InferOutput.FromString,
                 )
@@ -34,7 +34,7 @@ class LLaMAServiceStub(object):
 class LLaMAServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def generate(self, request, context):
+    def Generate(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -55,8 +55,8 @@ class LLaMAServiceServicer(object):
 
 def add_LLaMAServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'generate': grpc.unary_unary_rpc_method_handler(
-                    servicer.generate,
+            'Generate': grpc.unary_stream_rpc_method_handler(
+                    servicer.Generate,
                     request_deserializer=inference__pb2.InferInput.FromString,
                     response_serializer=inference__pb2.InferOutput.SerializeToString,
             ),
@@ -72,7 +72,7 @@ def add_LLaMAServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'LLaMAService', rpc_method_handlers)
+            'streaming.LLaMAService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
@@ -81,7 +81,7 @@ class LLaMAService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def generate(request,
+    def Generate(request,
             target,
             options=(),
             channel_credentials=None,
@@ -91,7 +91,7 @@ class LLaMAService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/LLaMAService/generate',
+        return grpc.experimental.unary_stream(request, target, '/streaming.LLaMAService/Generate',
             inference__pb2.InferInput.SerializeToString,
             inference__pb2.InferOutput.FromString,
             options, channel_credentials,
@@ -108,7 +108,7 @@ class LLaMAService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/LLaMAService/commit',
+        return grpc.experimental.unary_unary(request, target, '/streaming.LLaMAService/commit',
             inference__pb2.InferInput.SerializeToString,
             inference__pb2.SessionID.FromString,
             options, channel_credentials,
@@ -125,7 +125,7 @@ class LLaMAService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/LLaMAService/get',
+        return grpc.experimental.unary_unary(request, target, '/streaming.LLaMAService/get',
             inference__pb2.SessionID.SerializeToString,
             inference__pb2.InferOutput.FromString,
             options, channel_credentials,

@@ -11,7 +11,7 @@ class Sender:
     def __init__(self, server_addresses) -> None:
         self.channels = [grpc.aio.insecure_channel(address)
                          for address in server_addresses]
-        self.clents = [inference_pb2_grpc.LLaMAServiceStub(channel)
+        self.clients = [inference_pb2_grpc.LLaMAServiceStub(channel)
                        for channel in self.channels]
 
     async def send_request(self, message):
@@ -23,6 +23,33 @@ class Sender:
         responses = await asyncio.gather(*tasks)
         print(f"{responses[0].text}")
 
+        async def read_responses(call):
+            async for response in call:
+                print(f"{response[0].text}")
+        
+        await asyncio.gather(
+            read_responses(tasks[0]),
+            read_responses(tasks[1]),
+        )
+        
+    async def stream_request(self):
+        request = inference_pb2.InferInput(prompts='hello, world')
+
+        # async def send_requests(call, req):
+        #     await call.write(req)
+        #     await call.done_writing()
+
+        # await asyncio.gather(
+        #     *(send_requests(client.Generate(), request) for client
+        #       in self.clients))
+
+        async def read_responses(call):
+            async for response in call:
+                print(response.text)
+
+        await asyncio.gather(
+            *(read_responses(client.Generate(request)) for client in self.clients))
+        
     async def close(self):
         await asyncio.gather(*[channel.close() for channel in self.channels])
 
@@ -44,14 +71,15 @@ async def send_request(server_address, message):
 
 async def main():
     client = Sender(['localhost:50051', 'localhost:50052'])
-    print('please input prompt:')
-    while True:
-        print('>>')
-        prompt = input()
-        if prompt != 'exit':
-            await client.send_request(prompt)
-        else:
-            await client.close()
+    await client.stream_request()
+    # print('please input prompt:')
+    # while True:
+    #     print('>>')
+    #     prompt = input()
+    #     if prompt != 'exit':
+    #         await client.stream_request(prompt)
+    #     else:
+    #         await client.close()
 
     # task1 = asyncio.create_task(send_request('localhost:50051', 'Hello from client 1'))
     # task2 = asyncio.create_task(send_request('localhost:50052', 'Hello from client 2'))

@@ -1,6 +1,9 @@
+from base64 import decode
 from concurrent import futures
 
 import asyncio
+from multiprocessing import dummy
+from urllib import response
 import grpc
 import inference_pb2
 import inference_pb2_grpc
@@ -78,18 +81,62 @@ class LLaMAServer(inference_pb2_grpc.LLaMAServiceServicer):
         self.local_rank = local_rank
         self.generator = generator
 
-    async def generate(self, request, conext):
+    async def decode(self, tokens, prompt_tokens, pre_pos, cur_pos):
+        str = 'dummy decode: {}, {}'.format(pre_pos, cur_pos)
+        return str
+    
+    async def dummy(self, num):
+        for i in range(num):
+            tokens = None
+            prompt_tokens = None
+            pre_pos = 0
+            cur_pos = i
+            yield tokens, prompt_tokens, pre_pos, cur_pos
+            await asyncio.sleep(.1)
+            
+    # async def Generate(self, request_iterator, context):
+    #     # async for request in request_iterator:
+    #     #     print(f'[{self.local_rank}], prompt: {request.prompts}')
+    #     async for tokens, prompt_tokens, pre_pos, cur_pos in self.dummpy(10):
+    #         text = await self.decode(tokens, prompt_tokens, pre_pos, cur_pos)
+    #         print(text)
+    #         response = inference_pb2.InferOutput(text=text)
+    #         yield response
+            
+    async def Generate(self, request, conext):
         print(f'[{self.local_rank}], prompt: {request.prompts}')
 
-        # self.count += 1
         message = self.generator.generate(
             [request.prompts],
             max_gen_len=256,
             temperature=0.8,
             top_p=0.95)
-        print(f'[{self.local_rank}], message: {message}')
-        # await context.send_response(inference_pb2.InferOutput(text=message))
-        return inference_pb2.InferOutput(text=message[0])
+        # message = self.dummy(10)
+        # async for tokens, prompt_tokens, pre_pos, cur_pos in message:
+        #     text = await self.decode(tokens, prompt_tokens, pre_pos, cur_pos)
+        #     print(text)
+        #     response = inference_pb2.InferOutput(text=text)
+        #     yield response
+        pre_pos = 0
+        async for tokens, prompt_tokens, cur_pos in message:
+            # print(f'cur: {cur_pos}')
+            if cur_pos - pre_pos >= 50:
+                text = await self.generator.decode(tokens, prompt_tokens, 
+                                             pre_pos, cur_pos)
+                print(f'cur: {cur_pos}, {text}')
+                pre_pos = cur_pos
+                response = inference_pb2.InferOutput(text=text[0])
+                yield response
+        # if cur_pos > pre_pos:
+        #     text = await self.generator.decode(tokens, prompt_tokens, 
+        #                                  pre_pos, cur_pos)
+        #     print(text)
+        #     response = inference_pb2.InferOutput(text=text)
+        #     yield response
+    #     # # print(f'[{self.local_rank}], message: {text}')
+    #     # # return inference_pb2.InferOutput(text='')
+    #     # # return inference_pb2.InferOutput(text=message[0])
+       
 
     def commit(self, request, context):
         print('this is server: commit')
