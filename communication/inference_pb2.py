@@ -13,7 +13,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0finference.proto\x12\tstreaming\"\x1d\n\nInferInput\x12\x0f\n\x07prompts\x18\x01 \x01(\t\"\x1b\n\x0bInferOutput\x12\x0c\n\x04text\x18\x01 \x01(\t\"\x17\n\tSessionID\x12\n\n\x02id\x18\x01 \x01(\x03\x32\xbd\x01\n\x0cLLaMAService\x12=\n\x08Generate\x12\x15.streaming.InferInput\x1a\x16.streaming.InferOutput\"\x00\x30\x01\x12\x37\n\x06\x63ommit\x12\x15.streaming.InferInput\x1a\x14.streaming.SessionID\"\x00\x12\x35\n\x03get\x12\x14.streaming.SessionID\x1a\x16.streaming.InferOutput\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0finference.proto\x12\tstreaming\"\x1d\n\nInferInput\x12\x0f\n\x07prompts\x18\x02 \x03(\t\"*\n\x0bInferOutput\x12\x0c\n\x04rank\x18\x02 \x01(\x05\x12\r\n\x05texts\x18\x03 \x03(\t2\x96\x01\n\x0cLLaMAService\x12;\n\x08Generate\x12\x15.streaming.InferInput\x1a\x16.streaming.InferOutput\"\x00\x12I\n\x14GenerateServerStream\x12\x15.streaming.InferInput\x1a\x16.streaming.InferOutput\"\x00\x30\x01\x62\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'inference_pb2', globals())
@@ -23,9 +23,7 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _INFERINPUT._serialized_start=30
   _INFERINPUT._serialized_end=59
   _INFEROUTPUT._serialized_start=61
-  _INFEROUTPUT._serialized_end=88
-  _SESSIONID._serialized_start=90
-  _SESSIONID._serialized_end=113
-  _LLAMASERVICE._serialized_start=116
-  _LLAMASERVICE._serialized_end=305
+  _INFEROUTPUT._serialized_end=103
+  _LLAMASERVICE._serialized_start=106
+  _LLAMASERVICE._serialized_end=256
 # @@protoc_insertion_point(module_scope)

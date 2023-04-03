@@ -21,8 +21,6 @@ from pathlib import Path
 from fairscale.nn.model_parallel.initialize import initialize_model_parallel
 
 from llama import ModelArgs, Transformer, Tokenizer, LLaMA
-import threading
-import queue
 
 
 def setup_model_parallel() -> Tuple[int, int]:
@@ -81,70 +79,29 @@ class LLaMAServer(inference_pb2_grpc.LLaMAServiceServicer):
         self.local_rank = local_rank
         self.generator = generator
 
-    async def decode(self, tokens, prompt_tokens, pre_pos, cur_pos):
-        str = 'dummy decode: {}, {}'.format(pre_pos, cur_pos)
-        return str
-    
-    async def dummy(self, num):
-        for i in range(num):
-            tokens = None
-            prompt_tokens = None
-            pre_pos = 0
-            cur_pos = i
-            yield tokens, prompt_tokens, pre_pos, cur_pos
-            await asyncio.sleep(.1)
             
-    # async def Generate(self, request_iterator, context):
-    #     # async for request in request_iterator:
-    #     #     print(f'[{self.local_rank}], prompt: {request.prompts}')
-    #     async for tokens, prompt_tokens, pre_pos, cur_pos in self.dummpy(10):
-    #         text = await self.decode(tokens, prompt_tokens, pre_pos, cur_pos)
-    #         print(text)
-    #         response = inference_pb2.InferOutput(text=text)
-    #         yield response
-            
-    async def Generate(self, request, conext):
-        print(f'[{self.local_rank}], prompt: {request.prompts}')
+    async def GenerateServerStream(self, request, conext):
+        print(f'rank: {self.local_rank}, prompt: {request.prompts}')
 
         message = self.generator.generate(
-            [request.prompts],
+            request.prompts,
             max_gen_len=256,
             temperature=0.8,
             top_p=0.95)
-        # message = self.dummy(10)
-        # async for tokens, prompt_tokens, pre_pos, cur_pos in message:
-        #     text = await self.decode(tokens, prompt_tokens, pre_pos, cur_pos)
-        #     print(text)
-        #     response = inference_pb2.InferOutput(text=text)
-        #     yield response
+        
+        freq = self.generator.freq
+        
         pre_pos = 0
-        async for tokens, prompt_tokens, cur_pos in message:
-            # print(f'cur: {cur_pos}')
-            if cur_pos - pre_pos >= 50:
-                text = await self.generator.decode(tokens, prompt_tokens, 
-                                             pre_pos, cur_pos)
-                print(f'cur: {cur_pos}, {text}')
+        async for tokens, prompt_tokens, cur_pos, total_len in message:
+            if cur_pos - pre_pos >= freq or cur_pos == total_len - 1:
+                texts = await self.generator.decode(tokens, prompt_tokens, 
+                                             pre_pos, cur_pos + 1)
                 pre_pos = cur_pos
-                response = inference_pb2.InferOutput(text=text[0])
+                for i, text in enumerate(texts):
+                    print(f'{text}')
+                response = inference_pb2.InferOutput(rank=self.local_rank,
+                                                     texts=texts)
                 yield response
-        # if cur_pos > pre_pos:
-        #     text = await self.generator.decode(tokens, prompt_tokens, 
-        #                                  pre_pos, cur_pos)
-        #     print(text)
-        #     response = inference_pb2.InferOutput(text=text)
-        #     yield response
-    #     # # print(f'[{self.local_rank}], message: {text}')
-    #     # # return inference_pb2.InferOutput(text='')
-    #     # # return inference_pb2.InferOutput(text=message[0])
-       
-
-    def commit(self, request, context):
-        print('this is server: commit')
-        pass
-
-    def get(self, request, conext):
-        print('this is server: get')
-        pass
 
 
 async def async_server(local_rank, port, generator):
@@ -157,22 +114,6 @@ async def async_server(local_rank, port, generator):
     print(f'async gRPC starting on {listen_addr}...')
     await server.start()
     await server.wait_for_termination()
-
-
-def server(port, generator):
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    inference_pb2_grpc.add_LLaMAServiceServicer_to_server(
-        LLaMAServer(generator),
-        server)
-    server.add_insecure_port(f'[::]:{port}')
-    print('gRPC starting...')
-    server.start()
-    server.wait_for_termination()
-
-
-def worker(generator):
-    result = generator.generate([''], max_gen_len=256, temperature=0.8, top_p=0.95)
-    print(result)
 
 
 def main(
