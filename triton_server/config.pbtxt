@@ -26,12 +26,19 @@
 
 name: "llama"
 backend: "python"
-
+max_batch_size: 8
 input [
   {
     name: "INPUT0"
     data_type: TYPE_STRING
     dims: [-1]
+  }
+]
+input [
+  {
+    name: "INPUT_LEN"
+    data_type: TYPE_INT32
+    dims: [1]
   }
 ]
 output [
@@ -41,6 +48,17 @@ output [
     dims: [-1]
   }
 ]
+output [
+  {
+    name: "OUTPUT_LEN"
+    data_type: TYPE_INT32
+    dims: [1]
+  }
+]
+
+dynamic_batching {
+  preferred_batch_size: [4, 8 ]
+}
 
 instance_group [{ kind: KIND_CPU }]
 

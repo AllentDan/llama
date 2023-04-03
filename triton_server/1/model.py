@@ -1,17 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the GNU General Public License version 3.
 
-from typing import Tuple
-import os
-import sys
 import json
-
-from pathlib import Path
 import triton_python_backend_utils as pb_utils
-
 import asyncio
-from urllib import response
 import grpc
+import numpy as np
 
 import inference_pb2
 import inference_pb2_grpc
@@ -63,9 +57,11 @@ class TritonPythonModel:
 
         # Get OUTPUT0 configuration
         output0_config = pb_utils.get_output_config_by_name(model_config, "OUTPUT0")
+        output_len_config = pb_utils.get_output_config_by_name(model_config, "OUTPUT_LEN")
 
         # Convert Triton types to numpy types
         self.output0_dtype = pb_utils.triton_string_to_numpy(output0_config['data_type'])
+        self.output_len_dtype = pb_utils.triton_string_to_numpy(output_len_config['data_type'])
 
         # Instantiate the PyTorch model
         self.device = f"cuda:{args['model_instance_device_id']}"
@@ -97,6 +93,7 @@ class TritonPythonModel:
         """
 
         output0_dtype = self.output0_dtype
+        output_len_dtype = self.output_len_dtype
 
         responses = []
 
@@ -104,15 +101,26 @@ class TritonPythonModel:
         # and create a pb_utils.InferenceResponse for each of them.
         for request in requests:
             # Get INPUT0
-            import numpy as np
-            prompt = pb_utils.get_input_tensor_by_name(request,
-                                                       "INPUT0").as_numpy().astype(np.bytes_).tobytes().decode('utf-8')
-            output = self.loop.run_until_complete(self.client.send_request(prompt))
-            output = np.array([str(x).encode('utf-8') for x in output], dtype=np.bytes_)
+            prompt_len = pb_utils.get_input_tensor_by_name(request, "INPUT_LEN").as_numpy().astype(np.int32)
+            input_array = pb_utils.get_input_tensor_by_name(request, "INPUT0").as_numpy().astype(np.bytes_)
+            # print(prompt_len.shape, input_array.shape)
+            prompts = []
+            for i in range(input_array.shape[0]):
+                prompt = input_array[i, :int(prompt_len[i])].tobytes().decode('utf-8', 'ignore')
+                prompts.append(prompt)
+
+            outputs = self.loop.run_until_complete(self.client.send_request(prompts))
+            outputs_aligned = np.zeros((len(outputs), 2048), dtype=np.bytes_)
+            outputs_len = np.zeros((len(outputs), 1), dtype=np.int32)
+            for i, output in enumerate(outputs):
+                output = np.array([str(x).encode('utf-8') for x in output], dtype=np.bytes_)
+                outputs_aligned[i, :int(output.shape[0])] = output
+                outputs_len[i, 0] = int(output.shape[0])
 
             # Create output tensors. You need pb_utils.Tensor
             # objects to create pb_utils.InferenceResponse.
-            out_tensor_0 = pb_utils.Tensor("OUTPUT0", output.astype(output0_dtype))
+            out_tensor_0 = pb_utils.Tensor("OUTPUT0", outputs_aligned.astype(output0_dtype))
+            out_tensor_len = pb_utils.Tensor("OUTPUT_LEN", outputs_len.astype(output_len_dtype))
 
             # Create InferenceResponse. You can set an error here in case
             # there was a problem with handling this inference request.
@@ -121,7 +129,7 @@ class TritonPythonModel:
             #
             # pb_utils.InferenceResponse(
             #    output_tensors=..., TritonError("An error occured"))
-            inference_response = pb_utils.InferenceResponse(output_tensors=[out_tensor_0])
+            inference_response = pb_utils.InferenceResponse(output_tensors=[out_tensor_0, out_tensor_len])
             responses.append(inference_response)
 
         # You should return a list of pb_utils.InferenceResponse. Length

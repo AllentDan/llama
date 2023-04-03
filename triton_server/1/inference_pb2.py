@@ -13,7 +13,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0finference.proto\"\x1d\n\nInferInput\x12\x0f\n\x07prompts\x18\x01 \x01(\t\"\x1b\n\x0bInferOutput\x12\x0c\n\x04text\x18\x01 \x01(\t\"\x17\n\tSessionID\x12\n\n\x02id\x18\x01 \x01(\x03\x32\x7f\n\x0cLLaMAService\x12\'\n\x08generate\x12\x0b.InferInput\x1a\x0c.InferOutput\"\x00\x12#\n\x06\x63ommit\x12\x0b.InferInput\x1a\n.SessionID\"\x00\x12!\n\x03get\x12\n.SessionID\x1a\x0c.InferOutput\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0finference.proto\"\x1d\n\nInferInput\x12\x0f\n\x07prompts\x18\x01 \x03(\t\"\x1b\n\x0bInferOutput\x12\x0c\n\x04text\x18\x01 \x03(\t\"\x17\n\tSessionID\x12\n\n\x02id\x18\x01 \x01(\x03\x32\x7f\n\x0cLLaMAService\x12\'\n\x08generate\x12\x0b.InferInput\x1a\x0c.InferOutput\"\x00\x12#\n\x06\x63ommit\x12\x0b.InferInput\x1a\n.SessionID\"\x00\x12!\n\x03get\x12\n.SessionID\x1a\x0c.InferOutput\"\x00\x62\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'inference_pb2', globals())
