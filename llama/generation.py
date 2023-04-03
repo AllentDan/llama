@@ -14,7 +14,7 @@ class LLaMA:
         self.model = model
         self.tokenizer = tokenizer
 
-    def generate(
+    async def generate(
         self,
         prompts: List[str],
         max_gen_len: int,
@@ -51,20 +51,32 @@ class LLaMA:
                 input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
             )
             tokens[:, cur_pos] = next_token
+            yield tokens, prompt_tokens, cur_pos
             prev_pos = cur_pos
 
+        # decoded = []
+        # for i, t in enumerate(tokens.tolist()):
+        #     # cut to max gen len
+        #     t = t[: len(prompt_tokens[i]) + max_gen_len]
+        #     # cut to eos tok if any
+        #     try:
+        #         t = t[: t.index(self.tokenizer.eos_id)]
+        #     except ValueError:
+        #         pass
+        #     decoded.append(self.tokenizer.decode(t))
+        # return decoded
+
+    async def decode(self, tokens, prompt_tokens, start_pos, end_pos):
         decoded = []
         for i, t in enumerate(tokens.tolist()):
-            # cut to max gen len
-            t = t[: len(prompt_tokens[i]) + max_gen_len]
-            # cut to eos tok if any
+            t = t[start_pos: end_pos]
             try:
                 t = t[: t.index(self.tokenizer.eos_id)]
             except ValueError:
                 pass
             decoded.append(self.tokenizer.decode(t))
         return decoded
-
+        
 
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
