@@ -29,6 +29,25 @@ def setup_model_parallel() -> Tuple[int, int]:
     return local_rank, world_size
 
 
+def replacce_quantized_linear(model, skip_names):
+    from fairscale.nn.model_parallel.layers import (
+        RowParallelLinear,
+        ColumnParallelLinear,
+    )
+    from llama import  ColumnParallelQuantizedLinear, RowParallelQuantizedLinear
+    def traves(m, skip_names):
+        for name, child in m.named_children():
+            
+            if isinstance(child, ColumnParallelLinear) and name not in skip_names:
+                new_child = ColumnParallelQuantizedLinear.from_float(child)
+                setattr(m, name, new_child)
+            elif isinstance(child, RowParallelLinear) and name not in skip_names:
+                new_child = RowParallelQuantizedLinear.from_float(child)
+                setattr(m, name, new_child)
+            else:
+                traves(child, skip_names)
+    traves(model,skip_names)
+
 def load(
     ckpt_dir: str,
     tokenizer_path: str,
@@ -36,13 +55,14 @@ def load(
     world_size: int,
     max_seq_len: int,
     max_batch_size: int,
+    quantized: bool,
 ) -> LLaMA:
     start_time = time.time()
     checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
     assert world_size == len(
         checkpoints
     ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {world_size}"
-    ckpt_path = checkpoints[local_rank]
+    ckpt_path = checkpoints[local_rank] 
     print("Loading")
     checkpoint = torch.load(ckpt_path, map_location="cpu")
     with open(Path(ckpt_dir) / "params.json", "r") as f:
@@ -55,9 +75,11 @@ def load(
     model_args.vocab_size = tokenizer.n_words
     torch.set_default_tensor_type(torch.cuda.HalfTensor)
     model = Transformer(model_args)
+    if quantized:
+        replacce_quantized_linear(model,['output'])
     torch.set_default_tensor_type(torch.FloatTensor)
     model.load_state_dict(checkpoint, strict=False)
-
+    
     generator = LLaMA(model, tokenizer)
     print(f"Loaded in {time.time() - start_time:.2f} seconds")
     return generator
@@ -70,13 +92,14 @@ def main(
     top_p: float = 0.95,
     max_seq_len: int = 512,
     max_batch_size: int = 32,
+    quantized: bool = False,
 ):
     local_rank, world_size = setup_model_parallel()
     if local_rank > 0:
         sys.stdout = open(os.devnull, "w")
 
     generator = load(
-        ckpt_dir, tokenizer_path, local_rank, world_size, max_seq_len, max_batch_size
+        ckpt_dir, tokenizer_path, local_rank, world_size, max_seq_len, max_batch_size, quantized
     )
 
     prompts = [
