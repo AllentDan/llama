@@ -43,14 +43,19 @@ CHUNK_DIM_1 = [
 CHUNK_DIM_0 = [
     'output.weight',
     'attention.wo.qweight',
-    # 'attention.wo.qscales',
-    # 'attention.wo.qzeros',
+    'attention.wo.scales',
+    'attention.wo.qzeros',
     'feed_forward.w2.qweight',
-    # 'feed_forward.w2.qscales',
-    # 'feed_forward.w2.qzeros',
+    'feed_forward.w2.scales',
+    'feed_forward.w2.qzeros',
     # 'attention.wq.bias',
     # 'attention.wq.bias',
     # 'attention.wq.bias',
+    # 'attention.wq.scales',
+    # 'attention.wk.scales',
+    # 'attention.wv.scales',
+    # 'feed_forward.w3.scales',
+    # 'feed_forward.w1.scales',
 ]
 
 
@@ -92,16 +97,17 @@ if __name__ == '__main__':
 
     num_rank = args.num_rank
 
-
-    source_ckpt = torch.load(args.ckpt)
+    if args.ckpt.endswith('safetensors'):
+        from safetensors.torch import load_file as safe_load
+        source_ckpt = safe_load(args.ckpt)
+    else:
+        source_ckpt = torch.load(args.ckpt)
+        
     coverted_ckpts = [dict() for rank in range(num_rank)]
 
 
     for k,v in source_ckpt.items():
         new_key = k
-        
-        
-        
         for m in MAPPINGS:
             new_key = new_key.replace(m[0],m[1])
             
@@ -117,7 +123,7 @@ if __name__ == '__main__':
             for rank in range(num_rank):
                 coverted_ckpts[rank].update({new_key:splited_weights[rank]})
             # continue
-        elif _is_target_weight(new_key, CHUNK_DIM_0) and num_rank > 1:
+        elif _is_target_weight(new_key, CHUNK_DIM_0) and num_rank > 1 and v.size(0) != 1:
             assert v.size(0) % num_rank == 0
             splited_weights = torch.chunk(v, num_rank,dim=0)
             for rank in range(num_rank):
@@ -126,7 +132,7 @@ if __name__ == '__main__':
         else:
             for rank in range(num_rank):
                 coverted_ckpts[rank][new_key] = v
-            
+        print(new_key, 'Done', v.shape,' > ' ,coverted_ckpts[rank][new_key].shape)
     save_dir = Path(args.save_dir)
         
     save_dir.mkdir(parents=True, exist_ok=True)

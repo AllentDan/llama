@@ -29,24 +29,24 @@ def setup_model_parallel() -> Tuple[int, int]:
     return local_rank, world_size
 
 
-def replacce_quantized_linear(model, skip_names):
+def replacce_quantized_linear(model,group_size, skip_names):
     from fairscale.nn.model_parallel.layers import (
         RowParallelLinear,
         ColumnParallelLinear,
     )
     from llama import  ColumnParallelQuantizedLinear, RowParallelQuantizedLinear
-    def traves(m, skip_names):
+    def traves(m, group_size,skip_names):
         for name, child in m.named_children():
             
             if isinstance(child, ColumnParallelLinear) and name not in skip_names:
-                new_child = ColumnParallelQuantizedLinear.from_float(child)
+                new_child = ColumnParallelQuantizedLinear.from_float(child,group_size)
                 setattr(m, name, new_child)
             elif isinstance(child, RowParallelLinear) and name not in skip_names:
-                new_child = RowParallelQuantizedLinear.from_float(child)
+                new_child = RowParallelQuantizedLinear.from_float(child, group_size)
                 setattr(m, name, new_child)
             else:
-                traves(child, skip_names)
-    traves(model,skip_names)
+                traves(child, group_size, skip_names)
+    traves(model,group_size,skip_names)
 
 def load(
     ckpt_dir: str,
@@ -56,6 +56,7 @@ def load(
     max_seq_len: int,
     max_batch_size: int,
     quantized: bool,
+    group_size: int,
 ) -> LLaMA:
     start_time = time.time()
     checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
@@ -76,7 +77,7 @@ def load(
     torch.set_default_tensor_type(torch.cuda.HalfTensor)
     model = Transformer(model_args)
     if quantized:
-        replacce_quantized_linear(model,['output'])
+        replacce_quantized_linear(model,group_size,['output'])
     torch.set_default_tensor_type(torch.FloatTensor)
     model.load_state_dict(checkpoint, strict=False)
     
@@ -93,13 +94,15 @@ def main(
     max_seq_len: int = 512,
     max_batch_size: int = 32,
     quantized: bool = False,
+    group_size: int = -1,
 ):
     local_rank, world_size = setup_model_parallel()
     if local_rank > 0:
         sys.stdout = open(os.devnull, "w")
 
     generator = load(
-        ckpt_dir, tokenizer_path, local_rank, world_size, max_seq_len, max_batch_size, quantized
+        ckpt_dir, tokenizer_path, local_rank, world_size, max_seq_len, 
+        max_batch_size, quantized, group_size
     )
 
     prompts = [
@@ -130,7 +133,7 @@ plush girafe => girafe peluche
 cheese =>""",
     ]
     results = generator.generate(
-        prompts, max_gen_len=256, temperature=temperature, top_p=top_p
+        prompts, max_gen_len=50, temperature=temperature, top_p=top_p
     )
 
     for result in results:
