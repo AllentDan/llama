@@ -1,3 +1,20 @@
+# Usage
+
+1. Convert GPTQ Ckpt to LLama
+```
+python convert_gptq_ckpt.py --ckpt $CGPTQ_KPT --save-dir $DIR --params-json $LLAMA_OFFICIAL 
+--num-rank $TOTAL_RANK
+
+```
+2. Inference INT4
+```
+torchrun --nproc_per_node 4 example.py --ckpt_dir llama_ckpt/65B_MP4 --tokenizer_path llama_ckpt/tokenizer.model --quantized --group_size 64
+
+```
+3. (Optional) Convert LLama format ckpt from rank A to rank B
+```
+python convert_llama_ckpt.py --ckpt-dir llama_ckpt/65B --save-dir llama_ckpt/65B_MP4_FP --num-rank 4
+```
 # LLaMA 
 
 This repository is intended as a minimal, hackable and readable example to load [LLaMA](https://ai.facebook.com/blog/large-language-model-llama-meta-ai/) ([arXiv](https://arxiv.org/abs/2302.13971v1)) models and run inference.
