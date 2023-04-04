@@ -182,13 +182,11 @@ class TritonPythonModel:
         # done sending responses for the corresponding request. We can't use the
         # response sender after closing it. The response sender is closed by
         # setting the TRITONSERVER_RESPONSE_COMPLETE_FINAL.
+        # 没能在客户端获取到 TRITONSERVER_RESPONSE_COMPLETE_FINAL 标志，自定义一个空的输出，如果客户端识别就当结束传输了
         outputs_aligned = np.zeros((1, 2048), dtype=np.bytes_)
         outputs_len = np.zeros((1, 1), dtype=np.int32)
-        # Create output tensors. You need pb_utils.Tensor
-        # objects to create pb_utils.InferenceResponse.
         out_tensor_0 = pb_utils.Tensor("OUTPUT0", outputs_aligned.astype(self.output0_dtype))
         out_tensor_len = pb_utils.Tensor("OUTPUT_LEN", outputs_len.astype(self.output_len_dtype))
-
         response = pb_utils.InferenceResponse(output_tensors=[out_tensor_0, out_tensor_len])
         response_sender.send(response)
 

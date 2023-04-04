@@ -61,6 +61,7 @@ def main(model_name: str, prompt: str, url: str):
                 raise data_item
             output0_data = data_item.as_numpy("OUTPUT0").astype(np.bytes_)
             output_len = data_item.as_numpy("OUTPUT_LEN").astype(np.int32)
+            # 没能在客户端获取到 TRITONSERVER_RESPONSE_COMPLETE_FINAL 标志，自定义一个空的输出，如果客户端识别就当结束传输了
             if output_len.sum() == 0:
                 break
             for i in range(int(output0_data.shape[0])):
