@@ -1,11 +1,11 @@
 syntax = "proto3";
 
 message InferInput {
-  string prompts = 1;
+  repeated string prompts = 1;
 }
 
 message InferOutput {
-  string text = 1;
+  repeated string text = 1;
 }
 
 message SessionID {

@@ -1,4 +1,3 @@
-
 import asyncio
 from urllib import response
 import grpc
@@ -8,11 +7,10 @@ import inference_pb2_grpc
 
 
 class Sender:
+
     def __init__(self, server_addresses) -> None:
-        self.channels = [grpc.aio.insecure_channel(address)
-                         for address in server_addresses]
-        self.clents = [inference_pb2_grpc.LLaMAServiceStub(channel)
-                       for channel in self.channels]
+        self.channels = [grpc.aio.insecure_channel(address) for address in server_addresses]
+        self.clents = [inference_pb2_grpc.LLaMAServiceStub(channel) for channel in self.channels]
 
     async def send_request(self, message):
         # 创建消息对象
@@ -43,7 +41,7 @@ async def send_request(server_address, message):
 
 
 async def main():
-    client = Sender(['localhost:50051', 'localhost:50052'])
+    client = Sender(['localhost:50051', 'localhost:50052', 'localhost:50053', 'localhost:50054'])
     print('please input prompt:')
     while True:
         print('>>')
@@ -58,6 +56,7 @@ async def main():
 
     # # 等待所有任务完成
     # await asyncio.gather(task1, task2)
+
 
 if __name__ == '__main__':
     asyncio.run(main())
