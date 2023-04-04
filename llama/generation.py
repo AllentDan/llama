@@ -13,6 +13,7 @@ class LLaMA:
     def __init__(self, model: Transformer, tokenizer: Tokenizer):
         self.model = model
         self.tokenizer = tokenizer
+        self._freq = 50
 
     async def generate(
         self,
@@ -51,7 +52,7 @@ class LLaMA:
                 input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
             )
             tokens[:, cur_pos] = next_token
-            yield tokens, prompt_tokens, cur_pos
+            yield tokens, prompt_tokens, cur_pos, total_len
             prev_pos = cur_pos
 
         # decoded = []
@@ -76,6 +77,10 @@ class LLaMA:
                 pass
             decoded.append(self.tokenizer.decode(t))
         return decoded
+    
+    @property
+    def freq(self):
+        return self._freq
         
 
 def sample_top_p(probs, p):
