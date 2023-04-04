@@ -17,16 +17,43 @@ class Sender:
 
     def __init__(self, server_addresses) -> None:
         self.channels = [grpc.aio.insecure_channel(address) for address in server_addresses]
-        self.clents = [inference_pb2_grpc.LLaMAServiceStub(channel) for channel in self.channels]
+        self.clients = [inference_pb2_grpc.LLaMAServiceStub(channel) for channel in self.channels]
 
-    async def send_request(self, message):
+    async def async_request(self, prompts):
         # 创建消息对象
-        request = inference_pb2.InferInput(prompts=message)
+        request = inference_pb2.InferInput(prompts=[prompts])
 
         # 发送请求到所有服务器
         tasks = [client.generate(request) for client in self.clents]
         responses = await asyncio.gather(*tasks)
-        return responses[0].text
+        for response in responses:
+            if response.rank == 0:
+                print(f"{response.text}")
+
+    async def stream_request(self, prompts, response_sender, output0_dtype, output_len_dtype):
+        request = inference_pb2.InferInput(prompts=prompts)
+
+        async def read_responses(call):
+            async for response in call:
+                if response.rank == 0:
+                    # for text in response.texts:
+                    outputs = response.texts
+                    outputs_aligned = np.zeros((len(outputs), 2048), dtype=np.bytes_)
+                    outputs_len = np.zeros((len(outputs), 1), dtype=np.int32)
+                    for i, output in enumerate(outputs):
+                        output = np.array([str(x).encode('utf-8') for x in output], dtype=np.bytes_)
+                        outputs_aligned[i, :int(output.shape[0])] = output
+                        outputs_len[i, 0] = int(output.shape[0])
+
+                    # Create output tensors. You need pb_utils.Tensor
+                    # objects to create pb_utils.InferenceResponse.
+                    out_tensor_0 = pb_utils.Tensor("OUTPUT0", outputs_aligned.astype(output0_dtype))
+                    out_tensor_len = pb_utils.Tensor("OUTPUT_LEN", outputs_len.astype(output_len_dtype))
+
+                    response = pb_utils.InferenceResponse(output_tensors=[out_tensor_0, out_tensor_len])
+                    response_sender.send(response)
+
+        await asyncio.gather(*(read_responses(client.GenerateServerStream(request)) for client in self.clients))
 
     async def close(self):
         await asyncio.gather(*[channel.close() for channel in self.channels])
@@ -149,27 +176,22 @@ class TritonPythonModel:
         # The response_sender is used to send response(s) associated with the
         # corresponding request.
 
-        for idx in range(1):
-            outputs = self.loop.run_until_complete(self.client.send_request(prompts))
-            outputs_aligned = np.zeros((len(outputs), 2048), dtype=np.bytes_)
-            outputs_len = np.zeros((len(outputs), 1), dtype=np.int32)
-            for i, output in enumerate(outputs):
-                output = np.array([str(x).encode('utf-8') for x in output], dtype=np.bytes_)
-                outputs_aligned[i, :int(output.shape[0])] = output
-                outputs_len[i, 0] = int(output.shape[0])
-
-            # Create output tensors. You need pb_utils.Tensor
-            # objects to create pb_utils.InferenceResponse.
-            out_tensor_0 = pb_utils.Tensor("OUTPUT0", outputs_aligned.astype(self.output0_dtype))
-            out_tensor_len = pb_utils.Tensor("OUTPUT_LEN", outputs_len.astype(self.output_len_dtype))
-
-            response = pb_utils.InferenceResponse(output_tensors=[out_tensor_0, out_tensor_len])
-            response_sender.send(response)
-
+        self.loop.run_until_complete(
+            self.client.stream_request(prompts, response_sender, self.output0_dtype, self.output_len_dtype))
         # We must close the response sender to indicate to Triton that we are
         # done sending responses for the corresponding request. We can't use the
         # response sender after closing it. The response sender is closed by
         # setting the TRITONSERVER_RESPONSE_COMPLETE_FINAL.
+        outputs_aligned = np.zeros((1, 2048), dtype=np.bytes_)
+        outputs_len = np.zeros((1, 1), dtype=np.int32)
+        # Create output tensors. You need pb_utils.Tensor
+        # objects to create pb_utils.InferenceResponse.
+        out_tensor_0 = pb_utils.Tensor("OUTPUT0", outputs_aligned.astype(self.output0_dtype))
+        out_tensor_len = pb_utils.Tensor("OUTPUT_LEN", outputs_len.astype(self.output_len_dtype))
+
+        response = pb_utils.InferenceResponse(output_tensors=[out_tensor_0, out_tensor_len])
+        response_sender.send(response)
+
         response_sender.send(flags=pb_utils.TRITONSERVER_RESPONSE_COMPLETE_FINAL)
 
         with self.inflight_thread_count_lck:

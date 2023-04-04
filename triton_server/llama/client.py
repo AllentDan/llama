@@ -54,13 +54,15 @@ def main(model_name: str, prompt: str, url: str):
         client.async_stream_infer(model_name=model_name, inputs=inputs, request_id="0", outputs=outputs)
         # responses = client.infer(model_name, inputs, request_id=str(1), outputs=outputs)
         # here we only get one response
-        expected_count = 1
-        for i in range(expected_count):
+
+        while True:
             data_item = user_data._completed_requests.get()
             if type(data_item) == InferenceServerException:
                 raise data_item
             output0_data = data_item.as_numpy("OUTPUT0").astype(np.bytes_)
             output_len = data_item.as_numpy("OUTPUT_LEN").astype(np.int32)
+            if output_len.sum() == 0:
+                break
             for i in range(int(output0_data.shape[0])):
                 output = output0_data[i, :int(output_len[i])].tobytes().decode('utf-8', 'ignore')
                 print(output)
