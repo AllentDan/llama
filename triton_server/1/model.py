@@ -5,6 +5,8 @@ import json
 import triton_python_backend_utils as pb_utils
 import asyncio
 import grpc
+import threading
+import time
 import numpy as np
 
 import inference_pb2
@@ -69,16 +71,26 @@ class TritonPythonModel:
         # self.channels = [grpc.aio.insecure_channel(address) for address in ['localhost:50051', 'localhost:50052']]
         # self.clents = [inference_pb2_grpc.LLaMAServiceStub(channel) for channel in self.channels]
         self.loop = asyncio.get_event_loop()
+        self.inflight_thread_count = 0
+        self.inflight_thread_count_lck = threading.Lock()
 
     def execute(self, requests):
-        """`execute` must be implemented in every Python model. `execute`
+        """`execute` MUST be implemented in every Python model. `execute`
         function receives a list of pb_utils.InferenceRequest as the only
-        argument. This function is called when an inference is requested
-        for this model. Depending on the batching configuration (e.g. Dynamic
-        Batching) used, `requests` may contain multiple requests. Every
-        Python model, must create one pb_utils.InferenceResponse for every
-        pb_utils.InferenceRequest in `requests`. If there is an error, you can
-        set the error argument when creating a pb_utils.InferenceResponse.
+        argument. This function is called when an inference request is made
+        for this model. The request.get_response_sender() must be used to
+        get an InferenceResponseSender object associated with the request.
+        Use the InferenceResponseSender.send(response=<infer response object>,
+        flags=<flags>) to send responses.
+
+        In the final response sent using the response sender object, you must
+        set the flags argument to TRITONSERVER_RESPONSE_COMPLETE_FINAL to
+        indicate no responses will be sent for the corresponding request. If
+        there is an error, you can set the error argument when creating a
+        pb_utils.InferenceResponse. Setting the flags argument is optional and
+        defaults to zero. When the flags argument is set to
+        TRITONSERVER_RESPONSE_COMPLETE_FINAL providing the response argument is
+        optional.
 
         Parameters
         ----------
@@ -87,28 +99,57 @@ class TritonPythonModel:
 
         Returns
         -------
-        list
-          A list of pb_utils.InferenceResponse. The length of this list must
-          be the same as `requests`
+        None
         """
 
-        output0_dtype = self.output0_dtype
-        output_len_dtype = self.output_len_dtype
-
-        responses = []
-
-        # Every Python backend must iterate over everyone of the requests
-        # and create a pb_utils.InferenceResponse for each of them.
+        # Visit individual request to start processing them. Note that execute
+        # function is not required to wait for all the requests of the current
+        # batch to be processed before returning.
         for request in requests:
-            # Get INPUT0
-            prompt_len = pb_utils.get_input_tensor_by_name(request, "INPUT_LEN").as_numpy().astype(np.int32)
-            input_array = pb_utils.get_input_tensor_by_name(request, "INPUT0").as_numpy().astype(np.bytes_)
-            # print(prompt_len.shape, input_array.shape)
-            prompts = []
-            for i in range(input_array.shape[0]):
-                prompt = input_array[i, :int(prompt_len[i])].tobytes().decode('utf-8', 'ignore')
-                prompts.append(prompt)
+            self.process_request(request)
 
+        # Unlike in non-decoupled model transaction policy, execute function
+        # here returns no response. A return from this function only notifies
+        # Triton that the model instance is ready to receive another batch of
+        # requests. As we are not waiting for the response thread to complete
+        # here, it is possible that at any give time the model may be processing
+        # multiple batches of requests. Depending upon the request workload,
+        # this may lead to a lot of requests being processed by a single model
+        # instance at a time. In real-world models, the developer should be
+        # mindful of when to return from execute and be willing to accept next
+        # request batch.
+        return None
+
+    def process_request(self, request):
+        # Start a separate thread to send the responses for the request. The
+        # sending back the responses is delegated to this thread.
+        # Get INPUT0
+        prompt_len = pb_utils.get_input_tensor_by_name(request, "INPUT_LEN").as_numpy().astype(np.int32)
+        input_array = pb_utils.get_input_tensor_by_name(request, "INPUT0").as_numpy().astype(np.bytes_)
+        # print(prompt_len.shape, input_array.shape)
+        prompts = []
+        for i in range(input_array.shape[0]):
+            prompt = input_array[i, :int(prompt_len[i])].tobytes().decode('utf-8', 'ignore')
+            prompts.append(prompt)
+
+        thread = threading.Thread(target=self.response_thread, args=(request.get_response_sender(), prompts))
+
+        # A model using decoupled transaction policy is not required to send all
+        # responses for the current request before returning from the execute.
+        # To demonstrate the flexibility of the decoupled API, we are running
+        # response thread entirely independent of the execute thread.
+        thread.daemon = True
+
+        with self.inflight_thread_count_lck:
+            self.inflight_thread_count += 1
+
+        thread.start()
+
+    def response_thread(self, response_sender, prompts):
+        # The response_sender is used to send response(s) associated with the
+        # corresponding request.
+
+        for idx in range(1):
             outputs = self.loop.run_until_complete(self.client.send_request(prompts))
             outputs_aligned = np.zeros((len(outputs), 2048), dtype=np.bytes_)
             outputs_len = np.zeros((len(outputs), 1), dtype=np.int32)
@@ -119,26 +160,40 @@ class TritonPythonModel:
 
             # Create output tensors. You need pb_utils.Tensor
             # objects to create pb_utils.InferenceResponse.
-            out_tensor_0 = pb_utils.Tensor("OUTPUT0", outputs_aligned.astype(output0_dtype))
-            out_tensor_len = pb_utils.Tensor("OUTPUT_LEN", outputs_len.astype(output_len_dtype))
+            out_tensor_0 = pb_utils.Tensor("OUTPUT0", outputs_aligned.astype(self.output0_dtype))
+            out_tensor_len = pb_utils.Tensor("OUTPUT_LEN", outputs_len.astype(self.output_len_dtype))
 
-            # Create InferenceResponse. You can set an error here in case
-            # there was a problem with handling this inference request.
-            # Below is an example of how you can set errors in inference
-            # response:
-            #
-            # pb_utils.InferenceResponse(
-            #    output_tensors=..., TritonError("An error occured"))
-            inference_response = pb_utils.InferenceResponse(output_tensors=[out_tensor_0, out_tensor_len])
-            responses.append(inference_response)
+            response = pb_utils.InferenceResponse(output_tensors=[out_tensor_0, out_tensor_len])
+            response_sender.send(response)
 
-        # You should return a list of pb_utils.InferenceResponse. Length
-        # of this list must match the length of `requests` list.
-        return responses
+        # We must close the response sender to indicate to Triton that we are
+        # done sending responses for the corresponding request. We can't use the
+        # response sender after closing it. The response sender is closed by
+        # setting the TRITONSERVER_RESPONSE_COMPLETE_FINAL.
+        response_sender.send(flags=pb_utils.TRITONSERVER_RESPONSE_COMPLETE_FINAL)
+
+        with self.inflight_thread_count_lck:
+            self.inflight_thread_count -= 1
 
     def finalize(self):
         """`finalize` is called only once when the model is being unloaded.
         Implementing `finalize` function is optional. This function allows
         the model to perform any necessary clean ups before exit.
         """
-        print('Cleaning up...')
+        print('Finalize invoked')
+
+        inflight_threads = True
+        cycles = 0
+        logging_time_sec = 5
+        sleep_time_sec = 0.1
+        cycle_to_log = (logging_time_sec / sleep_time_sec)
+        while inflight_threads:
+            with self.inflight_thread_count_lck:
+                inflight_threads = (self.inflight_thread_count != 0)
+                if (cycles % cycle_to_log == 0):
+                    print(f"Waiting for {self.inflight_thread_count} response threads to complete...")
+            if inflight_threads:
+                time.sleep(sleep_time_sec)
+                cycles += 1
+
+        print('Finalize complete...')

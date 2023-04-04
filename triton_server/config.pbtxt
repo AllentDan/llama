@@ -27,6 +27,9 @@
 name: "llama"
 backend: "python"
 max_batch_size: 8
+model_transaction_policy {
+  decoupled: True
+}
 input [
   {
     name: "INPUT0"
